@@ -1,7 +1,10 @@
+
 {
   "name": "Roxtor Vozify Pro",
   "description": "Gestión Textil con Comandos de Voz Live para Inversiones Roxtor C.A.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera",
+    "clipboard-read"
   ]
 }

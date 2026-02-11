@@ -1,41 +1,40 @@
 
 # 🎙️ Roxtor Vozify (NVO)
 
-**Gestión Textil Inteligente con Gemini AI**
+**Gestión Textil Inteligente con Gemini AI - Soluciones Creativas**
 
 Roxtor Vozify es una aplicación diseñada para Inversiones Roxtor C.A. que permite gestionar catálogos, pedidos y responder consultas de clientes mediante inteligencia artificial de voz.
 
-## 🚀 Despliegue Rápido
+## 🚀 Despliegue en 3 Minutos
 
-### 1. Requisitos
-- Una cuenta en **GitHub**.
-- Una cuenta en **Netlify** o **Vercel**.
-- Una **Gemini API Key** (Obtenla en [Google AI Studio](https://aistudio.google.com/)).
+### 1. Preparación de Repositorio (GitHub)
+- Crea un nuevo repositorio en GitHub (ej: `roxtor-vozify`).
+- Sube todos estos archivos a la rama `main`.
 
-### 2. Configuración de Variables de Entorno
-Para que la aplicación funcione, **DEBES** configurar la siguiente variable en tu panel de Netlify/Vercel (Site Settings > Environment Variables):
+### 2. Despliegue en Netlify / Vercel
+1. Conecta tu cuenta de GitHub con Netlify o Vercel.
+2. Selecciona el repositorio `roxtor-vozify`.
+3. **IMPORTANTE: Configuración de Variables de Entorno (Environment Variables)**:
+   Ve a la configuración del sitio (Site Settings) y añade esta variable:
 
 | Variable | Valor |
 |----------|-------|
 | `API_KEY` | *Tu_Clave_De_Gemini_Aquí* |
 
-### 3. Instalación Local
-Si deseas probarla en tu computadora:
-```bash
-npm install
-npm run dev
-```
+4. Presiona **Deploy**. ¡Tu app estará online en segundos!
 
-## 📱 Instalación como App (PWA)
-Una vez desplegada, abre la URL en tu móvil:
-- **iOS:** Compartir > "Agregar a Inicio".
-- **Android:** Tres puntos > "Instalar Aplicación".
+### 3. Configuración Inicial en la App
+Una vez abierta tu URL:
+1. Ve a la pestaña **GESTIÓN (Icono Lista)**.
+2. Selecciona la subpestaña **TIENDAS (Icono Dashboard)**.
+3. Ingresa la Llave Maestra por defecto: `2025`.
+4. Pega el enlace de tu logo de Google Drive en el campo "Identidad Corporativa".
+5. Actualiza el RIF y nombres de las sedes.
 
-## 🛠️ Tecnologías
-- **Frontend:** React 19 + Tailwind CSS.
-- **IA:** Google Gemini API (Modelos Flash & TTS).
-- **Iconos:** Lucide React.
-- **Sincronización:** Cloud Sync mediante código de equipo.
+## 📱 Instalación en Móviles (PWA)
+Esta app es una PWA. Para instalarla sin usar tiendas:
+- **iPhone (Safari):** Toca Compartir > "Agregar a Inicio".
+- **Android (Chrome):** Toca los tres puntos > "Instalar Aplicación".
 
 ---
 *Desarrollado para Inversiones Roxtor, C.A - Soluciones Creativas.*

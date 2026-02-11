@@ -1,4 +1,5 @@
-const CACHE_NAME = 'vozify-cache-v1-2-3';
+
+const CACHE_NAME = 'vozify-cache-v1-2-5';
 const urlsToCache = [
   '/',
   '/index.html',

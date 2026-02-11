@@ -1,314 +1,328 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
-import { Product, Order, WorkshopGroup, PaymentMethod, AssistantTone, AppSettings } from '../types';
-import { Mic, Send, Loader2, Bot, MessageCircle, Zap, Square, Play, ShieldCheck, ShoppingCart, CreditCard, FileDown, ExternalLink, Download, CheckCircle2, Camera } from 'lucide-react';
-
-// Manually implementing encode and decode according to GenAI guidelines
-function encode(bytes: Uint8Array) {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
-function decode(base64: string) {
-  const binaryString = window.atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-  return bytes;
-}
-
-async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
-}
+import React, { useState, useEffect, useRef } from 'react';
+import { GoogleGenAI, Modality } from '@google/genai';
+import { Product, ActiveLead, AppSettings, Order, Agent } from '../types';
+import { 
+  Send, Loader2, Bot, MessageCircle, Zap, 
+  Trash2, Globe, AlertCircle, UserPlus, Flame, 
+  Calculator, RefreshCcw, ExternalLink, FileText, 
+  CheckCircle, ChevronRight, Layers, Sparkles, 
+  TrendingUp, PhoneForwarded, Factory, Info, Monitor,
+  Radio, Search, Smartphone, Users, X, ClipboardPaste,
+  Printer, Instagram, Phone, MapPin, ShieldCheck, Mic, Volume2, Square
+} from 'lucide-react';
 
 interface Props {
   products: Product[];
   orders: Order[];
-  groups: WorkshopGroup[];
-  paymentMethods: PaymentMethod[];
   settings: AppSettings;
   onOrderCreated: (order: Order) => void;
+  onUpdateSettings: (s: AppSettings) => void;
 }
 
-const VoiceAssistant: React.FC<Props> = ({ products, orders, groups, paymentMethods, settings, onOrderCreated }) => {
-  const [isPilotoActive, setIsPilotoActive] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [lastCreatedOrder, setLastCreatedOrder] = useState<Order | null>(null);
-  
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const liveOutContextRef = useRef<AudioContext | null>(null);
-  const sessionRef = useRef<any>(null);
-  const nextStartTimeRef = useRef(0);
-  const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+const VoiceAssistant: React.FC<Props> = ({ products, orders, settings, onOrderCreated, onUpdateSettings }) => {
+  const [leads, setLeads] = useState<ActiveLead[]>(() => JSON.parse(localStorage.getItem('roxtor_leads') || '[]'));
+  const [selectedLead, setSelectedLead] = useState<ActiveLead | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isUpdatingRate, setIsUpdatingRate] = useState(false);
+  const [activeAccountId, setActiveAccountId] = useState(settings.stores[0]?.whatsappId || '1');
+  const [manualText, setManualText] = useState('');
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
-  const initAudio = () => {
-    if (!audioContextRef.current) audioContextRef.current = new AudioContext({ sampleRate: 16000 });
-    if (!liveOutContextRef.current) liveOutContextRef.current = new AudioContext({ sampleRate: 24000 });
-  };
+  useEffect(() => {
+    localStorage.setItem('roxtor_leads', JSON.stringify(leads));
+  }, [leads]);
 
-  const stopPiloto = useCallback(() => {
-    if (sessionRef.current) sessionRef.current.close();
-    sessionRef.current = null;
-    setIsPilotoActive(false);
-  }, []);
+  const activeStore = settings.stores.find(s => s.whatsappId === activeAccountId) || settings.stores[0];
 
-  const generateOrderReceipt = (order: Order) => {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    canvas.width = 800;
-    canvas.height = 1100;
-    
-    const renderCanvas = (logoImg?: HTMLImageElement) => {
-      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#1e3a8a'; ctx.fillRect(0, 0, canvas.width, 240);
-      
-      if (logoImg) {
-        ctx.drawImage(logoImg, 40, 40, 160, 160);
-      }
-      
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 36px Inter';
-      ctx.fillText(settings.companyName, logoImg ? 220 : 50, 90);
-      ctx.font = '20px Inter';
-      ctx.fillText(`RIF: ${settings.companyRif}`, logoImg ? 220 : 50, 130);
-      ctx.fillText(settings.companyPhone, logoImg ? 220 : 50, 165);
-      
-      ctx.fillStyle = '#facc15'; ctx.font = 'black 24px Inter'; ctx.textAlign = 'right';
-      ctx.fillText('COMPROBANTE DE VENTA', 760, 200); ctx.textAlign = 'left';
-
-      ctx.fillStyle = '#0f172a'; ctx.font = '900 32px Inter'; ctx.fillText(`${order.clientName.toUpperCase()}`, 50, 320);
-      ctx.font = 'bold 20px Inter'; ctx.fillStyle = '#64748b';
-      ctx.fillText(`ORDEN: #${order.orderNumber} | FECHA: ${new Date().toLocaleDateString()}`, 50, 360);
-      
-      ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(50, 400); ctx.lineTo(750, 400); ctx.stroke();
-      
-      let y = 490;
-      order.items.forEach(item => {
-        ctx.fillStyle = '#1e293b'; ctx.font = 'bold 22px Inter';
-        ctx.fillText(`${item.quantity}x ${item.name}`, 50, y);
-        ctx.textAlign = 'right'; ctx.fillText(`$${(item.price * item.quantity).toFixed(2)}`, 750, y);
-        ctx.textAlign = 'left'; y += 60;
-      });
-      
-      ctx.fillStyle = '#1e3a8a'; ctx.font = '900 50px Inter'; ctx.textAlign = 'right';
-      ctx.fillText(`TOTAL: $${order.total.toFixed(2)}`, 750, 950);
-      
-      ctx.fillStyle = '#64748b'; ctx.font = 'bold 16px Inter'; ctx.textAlign = 'center';
-      ctx.fillText('GRACIAS POR SU COMPRA - INVERSIONES ROXTOR C.A', canvas.width/2, 1050);
-
-      const link = document.createElement('a');
-      link.download = `Recibo_Roxtor_${order.orderNumber}.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 0.95);
-      link.click();
-    };
-
-    if (settings.companyLogo) {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => renderCanvas(img);
-      img.src = settings.companyLogo;
-    } else renderCanvas();
-  };
-
-  const startPiloto = async () => {
-    initAudio();
-    setIsPilotoActive(true);
-    setIsProcessing(true);
-
+  // Función para leer la respuesta (TTS)
+  const speakResponse = async (text: string) => {
+    if (isSpeaking) return;
+    setIsSpeaking(true);
     try {
-      // Corrected GoogleGenAI initialization
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      // Using sessionPromise pattern to ensure clean data streaming and no stale closures
-      const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        callbacks: {
-          onopen: () => {
-            setIsProcessing(false);
-            const source = audioContextRef.current!.createMediaStreamSource(stream);
-            const scriptProcessor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
-            scriptProcessor.onaudioprocess = (e) => {
-              const input = e.inputBuffer.getChannelData(0);
-              const int16 = new Int16Array(input.length);
-              for (let i = 0; i < input.length; i++) int16[i] = input[i] * 32768;
-              
-              const pcmBlob = {
-                data: encode(new Uint8Array(int16.buffer)),
-                mimeType: 'audio/pcm;rate=16000'
-              };
-
-              // Solely relying on sessionPromise to send data
-              sessionPromise.then((session) => {
-                session.sendRealtimeInput({ media: pcmBlob });
-              });
-            };
-            source.connect(scriptProcessor);
-            scriptProcessor.connect(audioContextRef.current!.destination);
-          },
-          onmessage: async (message: LiveServerMessage) => {
-            // Processing audio output
-            const audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-            if (audio) {
-              const ctx = liveOutContextRef.current!;
-              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-              const buffer = await decodeAudioData(decode(audio), ctx, 24000, 1);
-              const source = ctx.createBufferSource();
-              source.buffer = buffer;
-              source.connect(ctx.destination);
-              
-              source.addEventListener('ended', () => {
-                audioSourcesRef.current.delete(source);
-              });
-              
-              source.start(nextStartTimeRef.current);
-              nextStartTimeRef.current += buffer.duration;
-              audioSourcesRef.current.add(source);
-            }
-
-            // Handling interruptions correctly
-            const interrupted = message.serverContent?.interrupted;
-            if (interrupted) {
-              for (const source of audioSourcesRef.current.values()) {
-                source.stop();
-                audioSourcesRef.current.delete(source);
-              }
-              nextStartTimeRef.current = 0;
-            }
-          },
-          onerror: (e) => {
-            console.error('Live API Error:', e);
-            setIsPilotoActive(false);
-          },
-          onclose: () => {
-            console.log('Live API connection closed');
-            setIsPilotoActive(false);
-          }
-        },
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `Lee esto con tono profesional y servicial para un cliente de Roxtor: ${text}` }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } }
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
           },
-          systemInstruction: `
-            ERES EL PILOTO AUTOMÁTICO DE ${settings.companyName}.
-            TU OBJETIVO ES CERRAR VENTAS POR WHATSAPP.
-            
-            SIEMPRE INICIA PREGUNTANDO: "Jefe, acaba de llegar un mensaje de WhatsApp, ¿quieres que me encargue de este cliente?".
-            
-            SI EL JEFE DICE QUE SÍ:
-            1. Saluda cordialmente como vendedor de Roxtor.
-            2. Ofrece productos del catálogo: ${products.map(p => `${p.name} ($${p.price})`).join(', ')}.
-            3. Si el cliente quiere pagar, usa estos métodos: ${paymentMethods.map(pm => `${pm.name}: ${pm.details}`).join(', ')}.
-            4. Al finalizar di: "Venta cerrada jefe, ya puede descargar el recibo con su logo".
-          `
+        },
+      });
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        const audioData = atob(base64Audio);
+        const arrayBuffer = new ArrayBuffer(audioData.length);
+        const view = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < audioData.length; i++) {
+          view[i] = audioData.charCodeAt(i);
         }
-      });
-      
-      sessionPromise.then(session => {
-        sessionRef.current = session;
-      });
+        
+        // Decodificar PCM manual
+        const dataInt16 = new Int16Array(arrayBuffer);
+        const buffer = audioContext.createBuffer(1, dataInt16.length, 24000);
+        const channelData = buffer.getChannelData(0);
+        for (let i = 0; i < dataInt16.length; i++) {
+          channelData[i] = dataInt16[i] / 32768.0;
+        }
+
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+        source.onended = () => setIsSpeaking(false);
+        source.start();
+      } else {
+        setIsSpeaking(false);
+      }
     } catch (e) {
       console.error(e);
-      setIsPilotoActive(false);
-      setIsProcessing(false);
+      setIsSpeaking(false);
     }
   };
 
-  const handleTestOrder = () => {
-    const dummyOrder: Order = {
-      id: Date.now().toString(),
-      orderNumber: (orders.length + 101).toString(),
-      clientName: "Comprador WhatsApp",
-      items: [{ productId: '1', quantity: 2, price: 25, name: products[0]?.name || 'Producto Roxtor' }],
-      total: 50,
-      paidAmount: 50,
-      paymentMethod: 'Pago Móvil',
-      status: 'pendiente',
-      workshopGroupId: '1',
-      createdAt: new Date().toISOString(),
-      deliveryDate: new Date().toISOString()
+  const startListening = () => {
+    if (!('webkitSpeechRecognition' in window)) {
+      alert("Tu navegador no soporta dictado de voz.");
+      return;
+    }
+    const recognition = new (window as any).webkitSpeechRecognition();
+    recognition.lang = 'es-VE';
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setManualText(prev => prev + " " + transcript);
     };
-    onOrderCreated(dummyOrder);
-    setLastCreatedOrder(dummyOrder);
+    recognition.onend = () => setIsRecording(false);
+    recognition.start();
+  };
+
+  const fetchBcvRate = async () => {
+    setIsUpdatingRate(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-preview',
+        contents: "Busca la tasa oficial BCV en bcv.org.ve para hoy. Responde solo con el número decimal.",
+        config: { tools: [{ googleSearch: {} }] }
+      });
+      const rateStr = response.text?.match(/\d+[,.]\d+/)?.[0].replace(',', '.');
+      const rate = parseFloat(rateStr || "0");
+      if (rate > 0) {
+        onUpdateSettings({ 
+          ...settings, 
+          currentBcvRate: rate,
+          lastRateUpdate: new Date().toLocaleString()
+        });
+      }
+    } catch (e) { console.error(e); } finally { setIsUpdatingRate(false); }
+  };
+
+  const processChatText = async (text: string) => {
+    if (!text || text.length < 5) return alert("Copia el chat de WhatsApp o dicta el mensaje.");
+    setIsAnalyzing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: {
+          parts: [{
+            text: `Eres el Asistente Elite de Roxtor. Analiza el chat de WhatsApp y genera un presupuesto. Tasa BCV: ${settings.currentBcvRate}.
+            Extrae: Nombre cliente, productos detectados y genera una respuesta de cierre profesional con el tono de Soluciones Creativas.
+            SALIDA JSON: { "clientName": string, "status": "hot"|"warm", "summary": string, "suggestedAction": string, "totalQuoteUSD": number, "detectedProducts": [] }`
+          }, { text }]
+        },
+        config: { responseMimeType: "application/json" }
+      });
+      const data = JSON.parse(response.text || '{}');
+      const newLead: ActiveLead = {
+        id: Date.now().toString(),
+        ...data,
+        lastMessage: text.slice(-100),
+        lastUpdate: new Date().toLocaleTimeString(),
+        accountSource: activeAccountId
+      };
+      setLeads(prev => [newLead, ...prev]);
+      setSelectedLead(newLead);
+      setIsPasteModalOpen(false);
+      setManualText('');
+    } catch (e) { alert("Error de Radar."); } finally { setIsAnalyzing(false); }
   };
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl mx-auto h-full overflow-hidden">
-      <div className={`relative overflow-hidden rounded-[40px] p-8 transition-all duration-700 ${isPilotoActive ? 'bg-blue-900 border-2 border-yellow-400 shadow-[0_0_50px_rgba(30,58,138,0.5)]' : 'bg-white border-2 border-slate-100'}`}>
-        {isPilotoActive && (
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[200%] h-[200%] bg-[conic-gradient(from_0deg,transparent,rgba(250,204,21,0.1),transparent)] animate-[spin_4s_linear_infinite]"></div>
-          </div>
-        )}
-        
-        <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
-          <div className="relative">
-            <div className={`w-24 h-24 rounded-[32px] flex items-center justify-center transition-all duration-500 ${isPilotoActive ? 'bg-yellow-400 text-blue-900 scale-110 shadow-2xl rotate-12' : 'bg-slate-100 text-slate-400'}`}>
-              <Zap size={48} className={isPilotoActive ? 'fill-current animate-pulse' : ''} />
+    <div className="flex flex-col gap-6 max-w-6xl mx-auto pb-24">
+      
+      <div className="relative overflow-hidden bg-slate-900 text-white p-10 rounded-[50px] shadow-2xl border border-white/5">
+        <div className="absolute top-0 right-0 p-12 opacity-5"><Radio size={320} className={isAnalyzing || isRecording ? "animate-pulse" : ""} /></div>
+        <div className="relative z-10 flex flex-col md:flex-row items-center gap-12">
+          <div className="flex-1 space-y-6 text-center md:text-left">
+            <h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none">Radar de <span className="text-blue-400">Voz</span></h2>
+            <p className="text-slate-400 text-sm font-medium max-w-md mx-auto md:mx-0">Captura mensajes de voz o chats para automatizar tus ventas en Roxtor.</p>
+            <div className="flex flex-wrap justify-center md:justify-start gap-3">
+               <button onClick={() => window.open('https://web.whatsapp.com', '_blank')} className="bg-white/10 hover:bg-white/20 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase border border-white/10 flex items-center gap-2">
+                 <ExternalLink size={14}/> WhatsApp Web
+               </button>
             </div>
           </div>
-
-          <div className="flex-1 text-center md:text-left">
-            <h2 className={`font-black text-3xl italic tracking-tighter mb-2 ${isPilotoActive ? 'text-white' : 'text-slate-900'}`}>
-              PILOTO <span className={isPilotoActive ? 'text-yellow-400' : 'text-blue-900'}>ROXTOR</span>
-            </h2>
-            <p className={`text-[10px] font-black uppercase tracking-[0.3em] ${isPilotoActive ? 'text-blue-200' : 'text-slate-400'}`}>
-              {isPilotoActive ? 'RADAR DE VENTAS ACTIVO' : 'IA ASISTENTE EN REPOSO'}
-            </p>
+          <div className="relative group">
+            <div className={`absolute inset-0 bg-blue-500 rounded-full blur-3xl opacity-20 ${isRecording || isAnalyzing ? 'animate-pulse' : ''}`}></div>
+            <button onClick={() => setIsPasteModalOpen(true)} className="w-48 h-48 rounded-full bg-blue-900 shadow-[0_0_50px_rgba(30,58,138,0.5)] flex flex-col items-center justify-center border-8 border-slate-900 relative z-10 active:scale-95 transition-all">
+              {isAnalyzing ? <Loader2 className="animate-spin text-blue-400" size={48}/> : (isRecording ? <Mic className="animate-bounce text-red-500" size={48} /> : <Zap size={48} className="text-blue-400" />)}
+              <span className="text-[10px] font-black uppercase mt-3 tracking-widest">{isRecording ? 'Escuchando...' : 'Iniciar Radar'}</span>
+            </button>
           </div>
-
-          <button onClick={isPilotoActive ? stopPiloto : startPiloto} className={`w-full md:w-auto px-12 py-6 rounded-[28px] font-black text-xs uppercase tracking-widest transition-all active:scale-90 shadow-2xl ${isPilotoActive ? 'bg-red-600 text-white' : 'bg-blue-900 text-white'}`}>
-            {isPilotoActive ? 'DETENER' : 'ACTIVAR'}
-          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <button onClick={() => window.open('https://web.whatsapp.com', '_blank')} className="flex items-center justify-center gap-3 bg-emerald-600 text-white p-6 rounded-[32px] font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all">
-          <MessageCircle size={20}/> WhatsApp
-        </button>
-        <button onClick={handleTestOrder} className="flex items-center justify-center gap-3 bg-white border border-slate-100 p-6 rounded-[32px] font-black text-[10px] text-blue-900 uppercase shadow-sm active:scale-95 transition-all">
-          <Zap size={20} className="text-yellow-400"/> Venta Test
-        </button>
-        <button disabled={!lastCreatedOrder} onClick={() => lastCreatedOrder && generateOrderReceipt(lastCreatedOrder)} className={`flex items-center justify-center gap-3 p-6 rounded-[32px] font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all ${lastCreatedOrder ? 'bg-blue-900 text-white' : 'bg-slate-100 text-slate-300'}`}>
-          <Download size={20}/> Bajar Recibo
-        </button>
-      </div>
-
-      <div className="flex-1 bg-white rounded-[40px] border border-slate-100 p-8 shadow-inner overflow-y-auto min-h-[200px]">
-        {lastCreatedOrder ? (
-          <div className="animate-in slide-in-from-bottom-4 duration-500">
-            <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[32px] flex items-center gap-4">
-              <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white"><CheckCircle2 size={24}/></div>
-              <div>
-                <h4 className="font-black text-emerald-900 text-xs uppercase">Venta Registrada</h4>
-                <p className="text-[10px] font-bold text-emerald-600 uppercase">Orden #{lastCreatedOrder.orderNumber} para {lastCreatedOrder.clientName}</p>
-              </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="md:col-span-2 bg-white border-2 border-slate-100 rounded-[45px] p-10 flex items-center justify-between group shadow-sm hover:shadow-md transition-all">
+          <div className="flex items-center gap-8">
+            <div className="bg-blue-900 w-20 h-20 rounded-[30px] flex items-center justify-center text-white shadow-xl"><Globe size={36}/></div>
+            <div>
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Tasa BCV Oficial</p>
+              <h4 className="text-5xl font-black text-blue-900 italic mt-1">{settings.currentBcvRate} <span className="text-2xl not-italic">VES</span></h4>
             </div>
           </div>
-        ) : (
-          <div className="h-full flex flex-col items-center justify-center text-center opacity-30 space-y-4">
-            <Bot size={48} className="text-slate-300" />
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-relaxed">Esperando señal de WhatsApp...</p>
-          </div>
-        )}
+          <button onClick={fetchBcvRate} className={`w-16 h-16 rounded-[22px] bg-slate-50 flex items-center justify-center text-blue-900 hover:bg-blue-900 hover:text-white transition-all shadow-sm ${isUpdatingRate ? 'animate-spin' : ''}`}><RefreshCcw size={24}/></button>
+        </div>
+        <div className="bg-white border-2 border-slate-100 rounded-[45px] p-10 flex flex-col justify-center shadow-sm">
+          <p className="text-[10px] font-black text-slate-400 uppercase mb-3 text-center tracking-[0.2em]">Sede Activa</p>
+          <select value={activeAccountId} onChange={e => setActiveAccountId(e.target.value)} className="bg-slate-50 p-5 rounded-2xl font-black text-sm text-blue-900 text-center border-none outline-none appearance-none cursor-pointer">
+            {settings.stores.map(s => <option key={s.id} value={s.whatsappId}>{s.name.toUpperCase()}</option>)}
+          </select>
+        </div>
       </div>
+
+      {isPasteModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[50px] w-full max-w-xl p-12 space-y-8 shadow-2xl animate-in zoom-in duration-300">
+            <div className="flex justify-between items-center">
+               <h4 className="font-black text-2xl text-blue-900 uppercase italic">Entrada de Datos</h4>
+               <button onClick={() => setIsPasteModalOpen(false)} className="p-3 bg-slate-100 rounded-full"><X size={24}/></button>
+            </div>
+            <div className="relative">
+              <textarea 
+                className="w-full bg-slate-50 p-8 rounded-[35px] h-72 font-bold text-slate-700 outline-none border-2 border-transparent focus:border-blue-900 transition-all resize-none" 
+                value={manualText} 
+                onChange={e => setManualText(e.target.value)} 
+                placeholder="Pega el chat o usa el dictado..."
+              />
+              <button 
+                onClick={startListening} 
+                className={`absolute bottom-6 right-6 p-6 rounded-full shadow-2xl transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-900 text-white'}`}
+              >
+                {isRecording ? <Square size={24}/> : <Mic size={24}/>}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+               <button onClick={() => setManualText('')} className="bg-slate-100 py-6 rounded-[25px] font-black text-[10px] uppercase tracking-widest text-slate-400">Limpiar</button>
+               <button 
+                 onClick={() => processChatText(manualText)} 
+                 disabled={isAnalyzing || !manualText}
+                 className="bg-blue-900 text-white py-6 rounded-[25px] font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 disabled:opacity-50"
+               >
+                 {isAnalyzing ? <Loader2 className="animate-spin" size={16}/> : <CheckCircle size={16}/>} PROCESAR SEÑAL
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedLead && (
+        <div className="bg-white border-2 border-slate-100 rounded-[55px] p-12 space-y-10 animate-in slide-in-from-bottom duration-500 shadow-xl">
+           <div className="flex justify-between items-start">
+              <div className="flex items-center gap-6">
+                 <div className="w-16 h-16 bg-blue-900 rounded-[22px] flex items-center justify-center text-white"><UserPlus size={28}/></div>
+                 <div>
+                    <h2 className="text-4xl font-black text-blue-900 uppercase italic tracking-tighter">{selectedLead.clientName}</h2>
+                    <div className="flex gap-2 mt-2">
+                       <span className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase ${selectedLead.status === 'hot' ? 'bg-red-50 text-red-600' : 'bg-orange-50 text-orange-600'}`}>{selectedLead.status}</span>
+                       <span className="bg-slate-100 text-slate-400 px-4 py-1.5 rounded-full text-[8px] font-black uppercase">Ref. ${selectedLead.totalQuoteUSD.toFixed(2)}</span>
+                    </div>
+                 </div>
+              </div>
+              <button onClick={() => setSelectedLead(null)} className="p-4 bg-slate-50 text-slate-300 rounded-full hover:bg-red-50 hover:text-red-500 transition-all"><X size={24}/></button>
+           </div>
+
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="md:col-span-2 space-y-6">
+                 <div className="bg-blue-50/50 p-10 rounded-[45px] border-2 border-blue-100 relative group">
+                    <div className="absolute top-8 right-8 flex gap-2">
+                       <button 
+                         onClick={() => speakResponse(selectedLead.suggestedAction)} 
+                         className={`p-4 rounded-2xl transition-all shadow-lg ${isSpeaking ? 'bg-red-500 text-white animate-pulse' : 'bg-white text-blue-900 hover:bg-blue-900 hover:text-white'}`}
+                       >
+                         {isSpeaking ? <Volume2 className="animate-bounce" size={20}/> : <Volume2 size={20}/>}
+                       </button>
+                    </div>
+                    <h5 className="font-black text-blue-900 text-[10px] uppercase mb-6 italic tracking-widest flex items-center gap-2"><Sparkles size={14}/> Respuesta Sugerida Roxtor</h5>
+                    <div className="bg-white p-8 rounded-[30px] border border-blue-100 text-sm font-bold text-blue-900 leading-relaxed shadow-sm min-h-[150px]">
+                      {selectedLead.suggestedAction}
+                    </div>
+                    <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                       <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(selectedLead.suggestedAction)}`, '_blank')} className="bg-blue-900 text-white py-6 rounded-[25px] font-black text-[10px] uppercase flex items-center justify-center gap-4 shadow-xl active:scale-95 transition-all">
+                         <Send size={18}/> ENVIAR A WHATSAPP
+                       </button>
+                       <button onClick={() => navigator.clipboard.writeText(selectedLead.suggestedAction)} className="bg-white border-2 border-blue-100 text-blue-900 py-6 rounded-[25px] font-black text-[10px] uppercase flex items-center justify-center gap-4 hover:bg-blue-50 transition-all">
+                         <ClipboardPaste size={18}/> COPIAR TEXTO
+                       </button>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="space-y-6">
+                 <div className="bg-slate-900 text-white p-10 rounded-[45px] shadow-2xl">
+                    <h5 className="font-black text-blue-400 text-[10px] uppercase mb-6 tracking-widest">Resumen de Cotización</h5>
+                    <div className="space-y-4">
+                       {selectedLead.detectedProducts.map((p, i) => (
+                          <div key={i} className="flex justify-between items-center border-b border-white/5 pb-3">
+                             <span className="text-[10px] font-bold text-slate-400 uppercase">{p.quantity}x {p.name}</span>
+                             <span className="text-xs font-black text-white italic">${(p.quantity * p.price).toFixed(2)}</span>
+                          </div>
+                       ))}
+                       <div className="pt-4 flex justify-between items-end">
+                          <p className="text-[9px] font-black text-blue-400 uppercase">Total Estimado</p>
+                          <p className="text-3xl font-black italic text-white">${selectedLead.totalQuoteUSD.toFixed(2)}</p>
+                       </div>
+                    </div>
+                 </div>
+                 <div className="bg-emerald-50 border-2 border-emerald-100 p-8 rounded-[40px] text-center">
+                    <p className="text-[9px] font-black text-emerald-600 uppercase mb-3">Sugerencia de Cierre</p>
+                    <p className="text-xs font-black text-slate-700 italic">"{selectedLead.summary}"</p>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {leads.length > 0 && !selectedLead && (
+        <div className="space-y-6">
+           <h3 className="text-2xl font-black text-blue-900 uppercase italic px-4">Historial de Radar</h3>
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {leads.map(lead => (
+                <div key={lead.id} onClick={() => setSelectedLead(lead)} className="bg-white p-8 rounded-[40px] border-2 border-slate-100 hover:border-blue-900 transition-all cursor-pointer group shadow-sm">
+                   <div className="flex justify-between items-start mb-4">
+                      <h4 className="font-black text-blue-900 uppercase italic text-lg leading-none">{lead.clientName}</h4>
+                      <span className={`px-3 py-1 rounded-lg text-[7px] font-black uppercase ${lead.status === 'hot' ? 'bg-red-50 text-red-600' : 'bg-orange-50 text-orange-600'}`}>{lead.status}</span>
+                   </div>
+                   <p className="text-[10px] font-bold text-slate-400 uppercase line-clamp-2 mb-6 italic">"{lead.summary}"</p>
+                   <div className="flex justify-between items-center border-t pt-4">
+                      <span className="text-[9px] font-black text-blue-900 italic">${lead.totalQuoteUSD.toFixed(2)}</span>
+                      <span className="text-[8px] font-bold text-slate-300 uppercase">{lead.lastUpdate}</span>
+                   </div>
+                </div>
+              ))}
+           </div>
+           <button onClick={() => {if(confirm('¿Borrar historial?')){setLeads([]); localStorage.removeItem('roxtor_leads');}}} className="w-full py-4 text-slate-300 font-black text-[9px] uppercase hover:text-red-500 transition-all flex items-center justify-center gap-2">
+              <Trash2 size={14}/> LIMPIAR HISTORIAL DE RADAR
+           </button>
+        </div>
+      )}
     </div>
   );
 };
