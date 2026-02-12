@@ -11,6 +11,7 @@ export interface Product {
   techniques: string;
   imageUrl?: string;
   cloudImageUrl?: string;
+  inventory: number; 
 }
 
 export interface StoreInfo {
@@ -31,6 +32,7 @@ export interface Designer {
   specialty: string;
   phone: string;
   assignedStoreId: string;
+  role: 'agente' | 'diseñador' | 'costura' | 'gerencia' | 'otro';
 }
 
 export interface Agent {
@@ -41,6 +43,25 @@ export interface Agent {
   salesCount: number;
   totalVolume: number;
   efficiency: number;
+  assignedStoreId?: string;
+  role: 'agente' | 'diseñador' | 'costura' | 'gerencia' | 'otro';
+}
+
+export interface ActiveLead {
+  id: string;
+  clientName: string;
+  status: 'hot' | 'warm' | 'cold';
+  summary: string;
+  suggestedAction: string;
+  totalQuoteUSD: number;
+  detectedProducts: {
+    name: string;
+    quantity: number;
+    price: number;
+  }[];
+  lastMessage: string;
+  lastUpdate: string;
+  accountSource: string;
 }
 
 export interface Order {
@@ -50,6 +71,9 @@ export interface Order {
   clientDoc: string; 
   clientPhone: string;
   clientAddress: string;
+  deliveryDate?: string;
+  jobDescription?: string;
+  referenceImages?: string[];
   items: { 
     productId?: string; 
     quantity: number; 
@@ -69,25 +93,12 @@ export interface Order {
   assignedToId?: string; 
   storeId: string;
   createdAt: string;
-}
-
-export interface ActiveLead {
-  id: string;
-  clientName: string;
-  lastMessage: string;
-  status: 'cold' | 'warm' | 'hot';
-  summary: string;
-  suggestedAction: string;
-  detectedProducts: { name: string; quantity: number; price: number }[];
-  totalQuoteUSD: number;
-  lastUpdate: string;
-  accountSource: string;
+  completedAt?: string;
 }
 
 export interface WorkshopGroup {
   id: string;
   name: string;
-  description?: string;
 }
 
 export interface PaymentMethod {
@@ -106,4 +117,5 @@ export interface AppSettings {
   currentBcvRate: number;
   lastRateUpdate: string;
   masterPin: string;
+  aiTone: 'profesional' | 'casual' | 'persuasivo' | 'amigable';
 }
