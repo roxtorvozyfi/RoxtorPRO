@@ -11,7 +11,7 @@ import {
   TrendingUp, PhoneForwarded, Factory, Info, Monitor,
   Radio, Search, Smartphone, Users, X, ClipboardPaste,
   Printer, Instagram, Phone, MapPin, ShieldCheck, Mic, Volume2, Square,
-  Activity
+  Activity, Edit3, Check
 } from 'lucide-react';
 
 interface Props {
@@ -27,6 +27,8 @@ const VoiceAssistant: React.FC<Props> = ({ products, orders, settings, onOrderCr
   const [selectedLead, setSelectedLead] = useState<ActiveLead | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isUpdatingRate, setIsUpdatingRate] = useState(false);
+  const [isEditingRateManual, setIsEditingRateManual] = useState(false);
+  const [manualRateValue, setManualRateValue] = useState(settings.currentBcvRate.toString());
   const [activeAccountId, setActiveAccountId] = useState(settings.stores[0]?.whatsappId || '1');
   const [manualText, setManualText] = useState('');
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
@@ -38,6 +40,20 @@ const VoiceAssistant: React.FC<Props> = ({ products, orders, settings, onOrderCr
   }, [leads]);
 
   const activeStore = settings.stores.find(s => s.whatsappId === activeAccountId) || settings.stores[0];
+
+  const handleSaveManualRate = () => {
+    const rate = parseFloat(manualRateValue.replace(',', '.'));
+    if (isNaN(rate) || rate <= 0) {
+      alert("Por favor ingrese una tasa válida mayor a 0.");
+      return;
+    }
+    onUpdateSettings({ 
+      ...settings, 
+      currentBcvRate: rate,
+      lastRateUpdate: new Date().toLocaleString()
+    });
+    setIsEditingRateManual(false);
+  };
 
   const speakResponse = async (text: string) => {
     if (isSpeaking) return;
@@ -117,13 +133,15 @@ const VoiceAssistant: React.FC<Props> = ({ products, orders, settings, onOrderCr
           currentBcvRate: rate,
           lastRateUpdate: new Date().toLocaleString()
         });
+        setManualRateValue(rate.toString());
         alert(`Tasa BCV oficial actualizada correctamente: ${rate} Bs.`);
       } else {
         throw new Error("Lectura de tasa errónea");
       }
     } catch (e) { 
       console.error(e); 
-      alert("Error buscando la tasa BCV automáticamente. Ingrésala manualmente en Ajustes si es necesario.");
+      alert("Error buscando la tasa BCV automáticamente. Ingrésala manualmente.");
+      setIsEditingRateManual(true);
     } finally { setIsUpdatingRate(false); }
   };
 
@@ -193,11 +211,31 @@ const VoiceAssistant: React.FC<Props> = ({ products, orders, settings, onOrderCr
           <div className="flex items-center gap-8">
             <div className="bg-blue-900 w-20 h-20 rounded-[30px] flex items-center justify-center text-white shadow-xl"><Globe size={36}/></div>
             <div>
-              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Dólar BCV Oficial</p>
-              <h4 className="text-5xl font-black text-blue-900 italic mt-1">{settings.currentBcvRate} <span className="text-2xl not-italic">Bs.</span></h4>
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest italic">Tasa BCV Oficial</p>
+              {isEditingRateManual ? (
+                <div className="flex items-center gap-2 mt-2">
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    className="bg-slate-50 p-2 rounded-xl font-black text-2xl text-blue-900 w-32 outline-none border-2 border-blue-900"
+                    value={manualRateValue}
+                    onChange={e => setManualRateValue(e.target.value)}
+                    autoFocus
+                  />
+                  <button onClick={handleSaveManualRate} className="p-2 bg-emerald-600 text-white rounded-lg"><Check size={20}/></button>
+                  <button onClick={() => { setIsEditingRateManual(false); setManualRateValue(settings.currentBcvRate.toString()); }} className="p-2 bg-red-100 text-red-600 rounded-lg"><X size={20}/></button>
+                </div>
+              ) : (
+                <div className="flex items-baseline gap-2">
+                  <h4 className="text-5xl font-black text-blue-900 italic mt-1">{settings.currentBcvRate} <span className="text-2xl not-italic">Bs.</span></h4>
+                  <button onClick={() => setIsEditingRateManual(true)} className="p-2 text-slate-300 hover:text-blue-900 transition-all opacity-0 group-hover:opacity-100"><Edit3 size={16}/></button>
+                </div>
+              )}
             </div>
           </div>
-          <button onClick={fetchBcvRate} className={`w-16 h-16 rounded-[22px] bg-slate-50 flex items-center justify-center text-blue-900 hover:bg-blue-900 hover:text-white transition-all shadow-sm ${isUpdatingRate ? 'animate-spin' : ''}`}><RefreshCcw size={24}/></button>
+          {!isEditingRateManual && (
+            <button onClick={fetchBcvRate} className={`w-16 h-16 rounded-[22px] bg-slate-50 flex items-center justify-center text-blue-900 hover:bg-blue-900 hover:text-white transition-all shadow-sm ${isUpdatingRate ? 'animate-spin' : ''}`}><RefreshCcw size={24}/></button>
+          )}
         </div>
         <div className="bg-white border-2 border-slate-100 rounded-[45px] p-10 flex flex-col justify-center shadow-sm">
           <p className="text-[10px] font-black text-slate-400 uppercase mb-3 text-center tracking-[0.2em]">Sede de Operación</p>
