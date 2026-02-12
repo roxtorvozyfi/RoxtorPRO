@@ -32,21 +32,29 @@ export interface Designer {
   specialty: string;
   phone: string;
   assignedStoreId: string;
-  role: 'agente' | 'diseñador' | 'costura' | 'gerencia' | 'otro';
+  role: 'diseñador' | 'agente' | 'costura' | 'taller' | 'otro';
 }
 
-export interface Agent {
+export type PaymentMethod = 'Dólares Efectivo' | 'Pago Móvil' | 'Transferencia' | 'Punto de Venta' | 'Efectivo BS';
+
+export interface PaymentRecord {
   id: string;
-  name: string;
-  responsibleName: string;
-  privatePhone: string;
-  salesCount: number;
-  totalVolume: number;
-  efficiency: number;
-  assignedStoreId?: string;
-  role: 'agente' | 'diseñador' | 'costura' | 'gerencia' | 'otro';
+  amountUSD: number;
+  method: PaymentMethod;
+  reference?: string;
+  date: string;
 }
 
+export interface AssignmentLog {
+  agentId: string;
+  agentName: string;
+  assignedAt: string;
+  role: string;
+}
+
+/**
+ * Interface representing a potential customer lead detected by the AI radar
+ */
 export interface ActiveLead {
   id: string;
   clientName: string;
@@ -83,39 +91,32 @@ export interface Order {
   }[];
   totalUSD: number;
   totalVES: number;
+  payments: PaymentRecord[];
   paidAmountUSD: number; 
   remainingAmountUSD: number; 
   exchangeRateUsed: number;
-  paymentMethod: 'Dólares Efectivo' | 'Pago Móvil' | 'Transferencia' | 'Punto de Venta' | 'Efectivo BS';
-  bankReference?: string;
   status: 'pendiente' | 'en_proceso' | 'listo' | 'entregado';
   agentId: string;
   assignedToId?: string; 
+  assignmentHistory?: AssignmentLog[];
   storeId: string;
   createdAt: string;
   completedAt?: string;
-}
-
-export interface WorkshopGroup {
-  id: string;
-  name: string;
-}
-
-export interface PaymentMethod {
-  id: string;
-  name: string;
-  details: string;
 }
 
 export interface AppSettings {
   companyName: string;
   companyRif: string;
   companyLogoUrl?: string;
+  companyAddress: string;
+  companyPhone: string;
+  companyInstagram: string;
   stores: StoreInfo[];
   designers: Designer[];
-  agents: Agent[];
+  agents: any[];
   currentBcvRate: number;
   lastRateUpdate: string;
-  masterPin: string;
+  accessPin: string; // PIN para entrar a la app
+  masterPin: string; // PIN para funciones de gerencia
   aiTone: 'profesional' | 'casual' | 'persuasivo' | 'amigable';
 }

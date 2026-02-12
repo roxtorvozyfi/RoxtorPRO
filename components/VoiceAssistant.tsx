@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Product, ActiveLead, AppSettings, Order, Agent } from '../types';
+// Fix: satisfy missing type exports
+import { Product, ActiveLead, AppSettings, Order } from '../types';
 import { 
   Send, Loader2, Bot, MessageCircle, Zap, 
   Trash2, Globe, AlertCircle, UserPlus, Flame, 
