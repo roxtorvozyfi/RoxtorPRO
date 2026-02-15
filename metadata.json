@@ -1,9 +1,8 @@
 {
-  "name": "Roxtor Vozify Pro",
-  "description": "Gestión Textil con Comandos de Voz Live para Inversiones Roxtor C.A.",
+  "name": "ROXTOR GESTION INTELIGENTE",
+  "description": "Sistema de gestión operativa inteligente con Radar AI para procesamiento de ventas y trazabilidad multi-agente.",
   "requestFramePermissions": [
     "microphone",
-    "camera",
-    "clipboard-read"
+    "camera"
   ]
 }

@@ -1,35 +1,17 @@
 
-const CACHE_NAME = 'vozify-cache-v1-2-5';
-const urlsToCache = [
+const CACHE_NAME = 'roxtor-v1';
+const ASSETS = [
   '/',
   '/index.html',
-  'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap'
+  '/index.tsx',
+  'https://cdn.tailwindcss.com'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(urlsToCache);
+      return cache.addAll(ASSETS);
     })
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      caches.keys().then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME) {
-              return caches.delete(cacheName);
-            }
-          })
-        );
-      })
-    ])
   );
 });
 

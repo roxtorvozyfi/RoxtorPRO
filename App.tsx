@@ -1,239 +1,341 @@
 
-import React, { useState, useEffect } from 'react';
-import { Product, Order, AppSettings, Designer, PaymentRecord, AssignmentLog } from './types';
-import CatalogManager from './components/CatalogManager';
-import VoiceAssistant from './components/VoiceAssistant';
-import OperationsManager from './components/OperationsManager';
-// Added X to the import list
-import { LayoutDashboard, ClipboardList, Lock, ShieldCheck, Zap, UserCircle, Briefcase, ChevronRight, X } from 'lucide-react';
-
-export const getDirectImageUrl = (url: string) => {
-  if (!url) return '';
-  if (url.startsWith('data:image')) return url;
-  if (url.includes('drive.google.com')) {
-    const idMatch = url.match(/\/d\/([^\/]+)/) || url.match(/id=([^\&]+)/);
-    if (idMatch && idMatch[1]) {
-      return `https://docs.google.com/uc?export=view&id=${idMatch[1]}`;
-    }
-  }
-  return url;
-};
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Product, Order, AppSettings, Agent, StoreConfig, Workshop } from './types';
+import Radar from './components/Radar';
+import Inventory from './components/Inventory';
+import Gestion from './components/Gestion';
+import Operaciones from './components/Operaciones';
+import { 
+  Radar as RadarIcon, 
+  Package, 
+  Briefcase,
+  Lock,
+  Instagram,
+  MapPin,
+  Activity,
+  ShieldCheck,
+  Cloud,
+  CloudOff,
+  MonitorSmartphone,
+  HardDrive,
+  Power,
+  Zap,
+  ChevronRight,
+  ShieldAlert,
+  Download,
+  Key
+} from 'lucide-react';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'catalog' | 'assistant' | 'operations'>('assistant');
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [activeTab, setActiveTab] = useState<'radar' | 'operaciones' | 'stock' | 'gestion'>('radar');
+  const [currentStoreId, setCurrentStoreId] = useState<string>('store_1');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showEmergencyPanel, setShowEmergencyPanel] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   
-  const [products, setProducts] = useState<Product[]>(() => JSON.parse(localStorage.getItem('roxtor_catalog') || '[]'));
-  const [orders, setOrders] = useState<Order[]>(() => JSON.parse(localStorage.getItem('roxtor_orders') || '[]'));
+  const [products, setProducts] = useState<Product[]>([
+    { id: 'p1', storeId: 'global', name: 'FRANELA MICRODURAZNO', priceRetail: 8, priceWholesale: 5.5, material: 'MICRODURAZNO Premium', description: 'Ideal para sublimación', stock: 100, category: 'producto' },
+    { id: 'p2', storeId: 'global', name: 'GORRA TRUCKER BORDADA', priceRetail: 12, priceWholesale: 8, material: 'Malla y Acrílico', description: 'Incluye logo frontal', stock: 50, category: 'producto' },
+    { id: 'p3', storeId: 'global', name: 'SERVICIO BORDADO LOGO', priceRetail: 5, priceWholesale: 3, material: 'Hilos Madeira', description: 'Hasta 10.000 puntadas', stock: 0, category: 'servicio' }
+  ]);
   
-  const [settings, setSettings] = useState<AppSettings>(() => {
-    const saved = localStorage.getItem('roxtor_settings');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (!parsed.accessPin) parsed.accessPin = '1234';
-      return parsed;
+  const [orders, setOrders] = useState<Order[]>([]);
+  
+  const [agents, setAgents] = useState<Agent[]>([
+    { 
+      id: 'a1', 
+      name: 'ALEJANDRO', 
+      role: 'OPERACIONES', 
+      storeId: 'store_1', 
+      specialty: 'DISEÑOS JR/CORTES VINIL/DTF/TECNICO SUBLIMACION/SELLOS', 
+      phone: '+584128798816' 
+    },
+    { 
+      id: 'a2', 
+      name: 'EMIRIUSKA', 
+      role: 'AGENTE DE VENTAS', 
+      storeId: 'store_1', 
+      specialty: 'COORDINACION Y ASINACION TAREAS/INVENTARIO/GESTION CLIENTES', 
+      phone: '+584249185159' 
     }
-    
-    return {
-      companyName: 'INVERSIONES ROXTOR C.A.',
-      companyRif: 'J-402959737',
-      companyLogoUrl: '',
-      companyAddress: 'Puerto Ordaz, Estado Bolívar, Venezuela',
-      companyPhone: '+58 424 9635252',
-      companyInstagram: '@roxtor.pzo',
-      currentBcvRate: 36.45,
-      lastRateUpdate: '',
-      accessPin: '1234',
-      masterPin: '2025',
-      aiTone: 'profesional',
-      stores: [
-        { id: '1', name: 'Roxtor Principal', address: 'Calle Principal PZO', phone: '+58 424 0000001', email: 'pzo@roxtor.com', hours: 'Lun-Vie: 8am - 5pm', whatsappId: 'P', lastOrderNumber: 1000, headerTitle: 'ORDEN DE SERVICIO PRINCIPAL' },
-        { id: '2', name: 'Roxtor Centro', address: 'Av. Las Américas', phone: '+58 424 0000002', email: 'centro@roxtor.com', hours: 'Lun-Sab: 9am - 6pm', whatsappId: 'C', lastOrderNumber: 2000, headerTitle: 'ORDEN DE SERVICIO CENTRO' }
-      ],
-      designers: [
-        { id: 't1', name: 'Alejo', specialty: 'Diseño Gráfico', phone: '584240000001', assignedStoreId: '1', role: 'diseñador' },
-        { id: 't2', name: 'Emi', specialty: 'Costura Senior', phone: '584240000002', assignedStoreId: '1', role: 'costura' }
-      ],
-      agents: []
-    };
-  });
-  
+  ]);
+
+  const [workshops, setWorkshops] = useState<Workshop[]>([
+    { id: 'w1', name: 'TALLER DOÑA JUANA', department: 'COSTURA', phone: '04120000000', storeId: 'store_1' },
+    { id: 'w2', name: 'ESTAMPADOS RAPID-ZAP', department: 'DTF', phone: '04121111111', storeId: 'store_1' }
+  ]);
+
   const [isLocked, setIsLocked] = useState(true);
-  const [pinInput, setPinInput] = useState('');
-  const [authMode, setAuthMode] = useState<'pin' | 'agent' | null>(null);
-  const [currentAgentId, setCurrentAgentId] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
+  
+  const [settings, setSettings] = useState<AppSettings>({
+    masterPin: '1234',
+    loginPin: '0000',
+    businessName: 'ROXTOR',
+    slogan: 'PERSONALIZACIÓN PROFESIONAL',
+    instagram: 'ROXTOR.PZO',
+    companyPhone: '+584249635252',
+    preferredTone: 'cercano',
+    bcvRate: 0,
+    logoUrl: '',
+    encryptionKey: 'roxtor_secure_key',
+    pagoMovil: {
+      bank: 'BANCAMIGA (0172)',
+      idNumber: '18806871',
+      phone: '04249635252'
+    },
+    stores: [
+      { id: 'store_1', name: 'ROXTOR PRINCIPAL', location: 'Puerto Ordaz', prefix: 'P', nextOrderNumber: 1, nextDirectSaleNumber: 1 },
+      { id: 'store_2', name: 'ROXTOR CENTRO', location: 'Centro PZO', prefix: 'C', nextOrderNumber: 1, nextDirectSaleNumber: 1 }
+    ]
+  });
+
+  const syncToSupabase = useCallback(async () => {
+    if (!isOnline || !settings.cloudSync?.enabled || !settings.cloudSync.apiUrl) return;
+    setSyncStatus('syncing');
+    try {
+      const data = {
+        store_id: currentStoreId,
+        last_sync: new Date().toISOString(),
+        payload: { products, orders, agents, workshops, settings }
+      };
+      // Usamos el endpoint REST de Supabase con Upsert habilitado mediante 'resolution=merge-duplicates'
+      const response = await fetch(`${settings.cloudSync.apiUrl}/rest/v1/roxtor_sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': settings.cloudSync.apiKey,
+          'Authorization': `Bearer ${settings.cloudSync.apiKey}`,
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(data)
+      });
+      if (response.ok) setSyncStatus('synced');
+      else throw new Error('Sync failed');
+    } catch (e) {
+      console.error('Supabase Sync Error:', e);
+      setSyncStatus('offline');
+    }
+  }, [isOnline, settings.cloudSync, products, orders, agents, workshops, currentStoreId, settings]);
 
   useEffect(() => {
-    localStorage.setItem('roxtor_catalog', JSON.stringify(products));
-    localStorage.setItem('roxtor_orders', JSON.stringify(orders));
-    localStorage.setItem('roxtor_settings', JSON.stringify(settings));
-  }, [products, orders, settings]);
+    const savedProducts = localStorage.getItem('erp_products');
+    const savedOrders = localStorage.getItem('erp_orders');
+    const savedSettings = localStorage.getItem('erp_settings');
+    const savedAgents = localStorage.getItem('erp_agents');
+    const savedWorkshops = localStorage.getItem('erp_workshops');
+    
+    if (savedProducts) setProducts(JSON.parse(savedProducts));
+    if (savedOrders) setOrders(JSON.parse(savedOrders));
+    if (savedAgents) setAgents(JSON.parse(savedAgents));
+    if (savedWorkshops) setWorkshops(JSON.parse(savedWorkshops));
+    if (savedSettings) setSettings(prev => ({ ...prev, ...JSON.parse(savedSettings) }));
+  }, []);
 
-  const handleUpdateOrderPayments = (orderId: string, payments: PaymentRecord[]) => {
-    setOrders(prev => prev.map(order => {
-      if (order.id === orderId) {
-        const paidAmountUSD = payments.reduce((acc, p) => acc + p.amountUSD, 0);
-        return {
-          ...order,
-          payments,
-          paidAmountUSD,
-          remainingAmountUSD: order.totalUSD - paidAmountUSD
-        };
-      }
-      return order;
-    }));
-  };
-
-  const handleUpdateOrderAssignment = (orderId: string, agentId: string, history: AssignmentLog[]) => {
-    setOrders(prev => prev.map(order => 
-      order.id === orderId ? { ...order, assignedToId: agentId, assignmentHistory: history } : order
-    ));
-  };
-
-  const checkPin = () => {
-    if (pinInput === settings.accessPin) { 
-      setIsLocked(false); 
-      setPinInput(''); 
-      setAuthMode(null);
-    } else { 
-      setPinInput(''); 
-      alert("PIN DE ACCESO INCORRECTO"); 
+  // Efecto de sincronización periódica
+  useEffect(() => {
+    if (isSessionActive && settings.cloudSync?.enabled) {
+      const timer = setTimeout(() => {
+        syncToSupabase();
+      }, 5000); // Esperar 5 seg tras cambios para no saturar
+      return () => clearTimeout(timer);
     }
+  }, [products, orders, settings, agents, workshops, isSessionActive, syncToSupabase, settings.cloudSync?.enabled]);
+
+  useEffect(() => {
+    if (isSessionActive) {
+      localStorage.setItem('erp_products', JSON.stringify(products));
+      localStorage.setItem('erp_orders', JSON.stringify(orders));
+      localStorage.setItem('erp_settings', JSON.stringify(settings));
+      localStorage.setItem('erp_agents', JSON.stringify(agents));
+      localStorage.setItem('erp_workshops', JSON.stringify(workshops));
+    }
+  }, [products, orders, settings, agents, workshops, isSessionActive]);
+
+  const handleUnlockMaster = (pin: string) => {
+    if (pin === settings.masterPin) {
+      setIsLocked(false);
+      return true;
+    }
+    return false;
   };
 
-  const loginAsAgent = (agentId: string) => {
-    setCurrentAgentId(agentId);
-    setIsLocked(false);
-    setActiveTab('operations'); // Los agentes van directo a sus órdenes
+  const handleLogin = (pin: string) => {
+    if (pin === settings.loginPin) {
+      setIsSessionActive(true);
+      return true;
+    }
+    return false;
   };
 
-  const logoUrl = getDirectImageUrl(settings.companyLogoUrl || '');
+  if (!isSessionActive) {
+    return <LandingPage settings={settings} onLogin={handleLogin} />;
+  }
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50 pb-24 md:pb-0 overflow-x-hidden">
-      {isLocked && (
-        <div className="fixed inset-0 bg-blue-950 flex flex-col items-center justify-center p-6 z-[100] overflow-y-auto">
-          <div className="bg-white/10 p-8 rounded-[50px] mb-8 border border-white/10 backdrop-blur-xl">
-            <Lock className="text-white w-16 h-16 animate-pulse" />
+    <div className="flex flex-col h-screen bg-[#f8fafc] text-slate-900 overflow-hidden font-sans">
+      <div className={`${!isOnline ? 'bg-rose-600' : 'bg-[#000814]'} h-10 flex items-center justify-between px-6 text-[9px] font-black uppercase tracking-[0.2em] text-white transition-colors duration-500 z-50`}>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            {!isOnline ? <CloudOff size={12} className="text-white/50" /> : <Cloud size={12} className="text-blue-400" />}
+            <span>NUBE: {syncStatus.toUpperCase()}</span>
           </div>
-          
-          <h2 className="text-white font-black text-2xl uppercase italic tracking-tighter mb-8 text-center">Roxtor <span className="text-blue-400">Vozify Pro</span></h2>
+        </div>
+        <div className="flex items-center gap-6">
+           <button onClick={() => setIsSessionActive(false)} className="bg-white/10 hover:bg-rose-500 hover:text-white px-3 py-1 rounded-lg flex items-center gap-2 transition-all">
+             <Power size={10} /> CERRAR SESIÓN
+           </button>
+           <div className="flex items-center gap-2">
+              <Activity size={10} className={syncStatus === 'syncing' ? 'animate-spin text-amber-400' : 'text-emerald-400'} />
+              <span>{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
+           </div>
+        </div>
+      </div>
 
-          {!authMode ? (
-            <div className="grid grid-cols-1 gap-4 w-full max-w-sm">
-               <button onClick={() => setAuthMode('pin')} className="bg-blue-900 text-white p-8 rounded-[35px] font-black uppercase text-xs tracking-widest flex items-center justify-between group hover:bg-blue-800 transition-all border border-white/5">
-                  <div className="flex items-center gap-4">
-                    <ShieldCheck className="text-blue-400" /> GERENCIA / CAJA
-                  </div>
-                  <ChevronRight size={18} />
-               </button>
-               <button onClick={() => setAuthMode('agent')} className="bg-white/10 text-white p-8 rounded-[35px] font-black uppercase text-xs tracking-widest flex items-center justify-between group hover:bg-white/20 transition-all border border-white/5">
-                  <div className="flex items-center gap-4">
-                    <UserCircle className="text-blue-300" /> ESPECIALISTA TALLER
-                  </div>
-                  <ChevronRight size={18} />
-               </button>
+      <header className="h-24 border-b bg-white flex items-center justify-between px-6 z-20 shrink-0 shadow-sm">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 border-r border-slate-100 pr-6">
+            <div className="relative w-14 h-14 flex items-center justify-center shrink-0">
+              {settings.logoUrl ? (
+                <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain rounded-2xl shadow-sm border border-slate-100 p-1" />
+              ) : (
+                <div className="w-full h-full bg-[#000814] rounded-2xl flex items-center justify-center text-white italic font-black text-2xl shadow-lg rotate-3">R</div>
+              )}
             </div>
-          ) : authMode === 'pin' ? (
-            <div className="flex flex-col items-center w-full max-w-sm">
-               <p className="text-blue-300 font-black text-[10px] uppercase tracking-[0.3em] mb-4">Acceso Maestro</p>
-               <div className="flex gap-4 mb-10">
-                 {[1, 2, 3, 4].map(i => (
-                   <div key={i} className={`w-3 h-3 rounded-full border-2 border-blue-400/50 ${pinInput.length >= i ? 'bg-blue-400 scale-125' : ''}`} />
-                 ))}
-               </div>
-               <div className="grid grid-cols-3 gap-4 w-full">
-                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'OK'].map(btn => (
-                   <button key={btn.toString()} onClick={() => {
-                       if (btn === 'C') setPinInput('');
-                       else if (btn === 'OK') checkPin();
-                       else if (typeof btn === 'number' && pinInput.length < 4) setPinInput(p => p + btn);
-                     }} className="aspect-square rounded-3xl flex items-center justify-center text-xl font-black bg-blue-900/40 text-white border border-white/10 active:bg-blue-400 transition-all">
-                     {btn}
-                   </button>
-                 ))}
-               </div>
-               <button onClick={() => setAuthMode(null)} className="mt-8 text-blue-400 font-black text-[10px] uppercase tracking-widest">Regresar</button>
+            <div className="flex flex-col">
+              <span className="font-black text-2xl tracking-tighter text-[#000814] italic uppercase leading-none">{settings.businessName}</span>
+              <span className="text-[10px] font-bold text-rose-600 tracking-[0.05em] uppercase italic">{settings.slogan}</span>
             </div>
-          ) : (
-            <div className="flex flex-col items-center w-full max-w-sm space-y-4">
-               <p className="text-blue-300 font-black text-[10px] uppercase tracking-[0.3em] mb-4">Seleccione su Nombre</p>
-               <div className="grid grid-cols-1 gap-3 w-full max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
-                  {settings.designers.map(d => (
-                    <button key={d.id} onClick={() => loginAsAgent(d.id)} className="bg-white/10 text-white p-6 rounded-3xl font-black uppercase text-[10px] flex items-center justify-between hover:bg-white/20 transition-all">
-                       <div className="flex items-center gap-3">
-                         <div className="w-8 h-8 bg-blue-900 rounded-xl flex items-center justify-center text-blue-200">{d.name[0]}</div>
-                         {d.name}
-                       </div>
-                       <span className="text-[8px] opacity-40">{d.role}</span>
-                    </button>
-                  ))}
-               </div>
-               <button onClick={() => setAuthMode(null)} className="mt-8 text-blue-400 font-black text-[10px] uppercase tracking-widest">Regresar</button>
+          </div>
+          {activeTab !== 'operaciones' && (
+            <div className="relative group">
+              <div className="flex flex-col">
+                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 italic">VISTA GLOBAL</span>
+                <select value={currentStoreId} onChange={(e) => setCurrentStoreId(e.target.value)} className="appearance-none bg-blue-50/50 border-2 border-blue-100/50 rounded-xl px-4 py-2 pr-10 text-xs font-black text-[#004ea1] uppercase italic tracking-wider outline-none cursor-pointer">
+                  {settings.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
             </div>
           )}
         </div>
-      )}
-
-      <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-40 px-6 h-24 flex items-center shadow-sm print:hidden">
-        <div className="max-w-5xl mx-auto w-full flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            {logoUrl ? (
-              <img src={logoUrl} className="w-14 h-14 object-contain rounded-xl shadow-lg bg-white" alt="Logo" />
-            ) : (
-              <div className="bg-blue-900 w-14 h-14 rounded-[22px] flex items-center justify-center font-black text-white text-2xl italic shadow-2xl">R</div>
-            )}
-            <div>
-              <h1 className="font-black text-xl text-blue-900 uppercase italic tracking-tighter leading-none">{settings.companyName}</h1>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest italic">{settings.companyInstagram} • {settings.companyRif}</p>
-            </div>
-          </div>
-          {currentAgentId && (
-            <div className="flex items-center gap-3 bg-blue-50 px-5 py-2 rounded-full border border-blue-100">
-               <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
-               <span className="text-[10px] font-black text-blue-900 uppercase italic tracking-widest">
-                 {settings.designers.find(d => d.id === currentAgentId)?.name}
-               </span>
-               <button onClick={() => { setIsLocked(true); setCurrentAgentId(null); setAuthMode(null); }} className="text-blue-400 hover:text-red-500 transition-colors ml-2"><X size={14}/></button>
-            </div>
+        <div className="flex items-center gap-4">
+          {!isLocked ? (
+            <button onClick={() => setIsLocked(true)} className="bg-[#000814] text-white px-6 py-3 rounded-2xl text-[10px] font-black flex items-center gap-3 hover:bg-slate-800 transition-all shadow-xl">
+              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /> MODO GERENTE
+            </button>
+          ) : (
+             <button onClick={() => setActiveTab('gestion')} className="flex items-center gap-3 text-slate-400 bg-slate-100 px-6 py-3 rounded-2xl text-[10px] font-black border border-slate-200">
+               <Lock size={12} className="text-slate-300" /> VISTA RESTRINGIDA
+             </button>
           )}
         </div>
       </header>
 
-      <nav className="fixed bottom-6 left-6 right-6 bg-slate-900/95 backdrop-blur-2xl flex justify-around p-4 z-50 rounded-[35px] shadow-2xl border border-white/5 print:hidden">
-        {[
-          { id: 'assistant', icon: Zap, label: 'RADAR', visible: !currentAgentId },
-          { id: 'catalog', icon: LayoutDashboard, label: 'STOCK', visible: !currentAgentId },
-          { id: 'operations', icon: ClipboardList, label: currentAgentId ? 'MIS TAREAS' : 'GESTIÓN', visible: true }
-        ].filter(t => t.visible).map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 flex flex-col items-center gap-1.5 transition-all duration-300 ${activeTab === tab.id ? 'text-white scale-110 transform translate-y-[-5px]' : 'text-slate-400 hover:text-white'}`}>
-            <tab.icon size={24} className={activeTab === tab.id ? 'text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]' : ''} />
-            <span className="text-[7px] font-black uppercase tracking-widest">{tab.label}</span>
-          </button>
-        ))}
-      </nav>
-
-      <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-8">
-        {activeTab === 'assistant' && !currentAgentId && (
-          <VoiceAssistant 
-            products={products} orders={orders} settings={settings} 
-            onUpdateSettings={setSettings} onOrderCreated={(o) => setOrders(v => [o, ...v])} 
-          />
-        )}
-        {activeTab === 'catalog' && !currentAgentId && <CatalogManager products={products} onAdd={(p) => setProducts(v => [...v, {...p, id: Date.now().toString()}])} onDelete={(id) => setProducts(v => v.filter(p => p.id !== id))} onUpdate={(p) => setProducts(v => v.map(old => old.id === p.id ? p : old))} onBulkAdd={(items) => setProducts(v => [...v, ...items as any])} settings={settings} />}
-        {activeTab === 'operations' && (
-          <OperationsManager 
-            orders={currentAgentId ? orders.filter(o => o.assignedToId === currentAgentId || o.assignmentHistory?.some(h => h.agentId === currentAgentId)) : orders} 
-            products={products} 
-            settings={settings} onUpdateSettings={setSettings} 
-            onAddOrder={(o) => setOrders(v => [o, ...v])}
-            onUpdateOrderStatus={(id, s) => setOrders(v => v.map(o => o.id === id ? {...o, status: s} : o))} 
-            onUpdateOrderPayments={handleUpdateOrderPayments}
-            onUpdateOrderAssignment={handleUpdateOrderAssignment}
-          />
-        )}
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 bg-slate-50/50">
+        <div className="max-w-7xl mx-auto h-full">
+          {activeTab === 'radar' && (
+            <Radar products={products} settings={settings} currentStoreId={currentStoreId} onNewOrder={(o) => setOrders([o, ...orders])} onUpdateSettings={(s) => setSettings(s)} />
+          )}
+          {activeTab === 'operaciones' && (
+            <Operaciones orders={orders} setOrders={setOrders} products={products} agents={agents} workshops={workshops} settings={settings} setSettings={setSettings} currentStoreId={currentStoreId} />
+          )}
+          {activeTab === 'stock' && (
+            <Inventory products={products} setProducts={setProducts} currentStoreId={currentStoreId} />
+          )}
+          {activeTab === 'gestion' && (
+            isLocked ? <PINScreen onUnlock={handleUnlockMaster} label="Panel Gerencial" icon={<Lock size={40} />} /> : (
+              <Gestion orders={orders} setOrders={setOrders} products={products} agents={agents} setAgents={setAgents} workshops={workshops} setWorkshops={setWorkshops} settings={settings} setSettings={setSettings} currentStoreId={currentStoreId} />
+            )
+          )}
+        </div>
       </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-[#000814] border-t border-white/5 flex items-center justify-center gap-4 md:gap-12 px-4 z-30 shadow-2xl">
+        <TabItem active={activeTab === 'radar'} onClick={() => setActiveTab('radar')} icon={<RadarIcon size={22}/>} label="Radar" />
+        <TabItem active={activeTab === 'operaciones'} onClick={() => setActiveTab('operaciones'} icon={<Zap size={22}/>} label="Operaciones" />
+        <TabItem active={activeTab === 'stock'} onClick={() => setActiveTab('stock')} icon={<Package size={22}/>} label="Inventario" />
+        <TabItem active={activeTab === 'gestion'} onClick={() => setActiveTab('gestion')} icon={<ShieldCheck size={22}/>} label="Gerencia" />
+      </nav>
     </div>
   );
 };
+
+const LandingPage = ({ settings, onLogin }: any) => {
+  const [showPin, setShowPin] = useState(false);
+  return (
+    <div className="h-screen w-screen bg-[#000814] flex flex-col items-center justify-center p-8 overflow-hidden relative">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/10 rounded-full blur-[120px] animate-pulse"></div>
+      {!showPin ? (
+        <div className="relative z-10 flex flex-col items-center gap-12 animate-in fade-in zoom-in duration-1000">
+           <div className="relative">
+             <div className="absolute inset-0 bg-blue-400/20 blur-3xl rounded-full scale-150"></div>
+             {settings.logoUrl ? (
+                <img src={settings.logoUrl} alt="Logo" className="w-56 h-56 object-contain relative z-10 drop-shadow-[0_0_50px_rgba(59,130,246,0.3)] hover:scale-110 transition-transform duration-700" />
+             ) : (
+                <div className="w-56 h-56 bg-white text-[#000814] rounded-[4rem] flex items-center justify-center text-8xl font-black italic shadow-2xl rotate-3 relative z-10">R</div>
+             )}
+           </div>
+           <div className="text-center space-y-4">
+             <h1 className="text-7xl font-black italic tracking-tighter text-white uppercase leading-none tracking-tighter">
+                {settings.businessName} <span className="text-blue-500">ERP</span>
+             </h1>
+             <p className="text-slate-500 font-black text-xs uppercase tracking-[0.5em] italic">{settings.slogan}</p>
+           </div>
+           <button 
+             onClick={() => setShowPin(true)}
+             className="group flex items-center gap-6 bg-white text-[#000814] pl-10 pr-4 py-4 rounded-full font-black text-xs uppercase tracking-widest hover:bg-blue-500 hover:text-white transition-all duration-500 shadow-[0_0_40px_rgba(255,255,255,0.1)] hover:shadow-blue-500/20"
+           >
+             INICIAR SISTEMA OPERATIVO
+             <div className="w-12 h-12 bg-[#000814] group-hover:bg-white group-hover:text-[#000814] text-white rounded-full flex items-center justify-center transition-all">
+                <ChevronRight size={24} />
+             </div>
+           </button>
+        </div>
+      ) : (
+        <PINScreen onUnlock={onLogin} label="ACCESO GENERAL" icon={<Key size={40} className="text-blue-500" />} onBack={() => setShowPin(false)} />
+      )}
+      <div className="absolute bottom-10 text-[8px] font-black text-slate-700 uppercase tracking-widest italic opacity-40">
+        Roxtor Intelligence Systems • Version 1.5.0-PRO
+      </div>
+    </div>
+  );
+};
+
+const PINScreen = ({ onUnlock, label, icon, onBack }: any) => {
+  const [pin, setPin] = useState('');
+  const addDigit = (d: string) => {
+    if (pin.length < 4) {
+      const newPin = pin + d;
+      setPin(newPin);
+      if (newPin.length === 4) setTimeout(() => { if (!onUnlock(newPin)) setPin(''); }, 150);
+    }
+  };
+  return (
+    <div className="h-full flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-500">
+      <div className="bg-white/5 backdrop-blur-3xl border-4 border-white/10 rounded-[4rem] p-12 shadow-2xl w-full max-sm flex flex-col items-center space-y-10">
+        <div className="w-20 h-20 bg-white/10 rounded-3xl flex items-center justify-center text-white shadow-inner">{icon}</div>
+        <div className="text-center">
+          <h4 className="font-black text-xl uppercase tracking-tighter italic text-white">{label}</h4>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Introduzca PIN de 4 dígitos</p>
+        </div>
+        <div className="flex gap-5">{[0, 1, 2, 3].map(i => <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${pin.length > i ? 'bg-blue-500 scale-150 shadow-[0_0_15px_#3b82f6]' : 'bg-white/10'}`} />)}</div>
+        <div className="grid grid-cols-3 gap-4 w-full">
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '←'].map(v => (
+            <button key={v} onClick={() => v === 'C' ? setPin('') : v === '←' ? (onBack ? onBack() : setPin(pin.slice(0, -1))) : addDigit(v.toString())} className="h-16 rounded-[1.5rem] bg-white/5 border border-white/5 font-black text-white hover:bg-white hover:text-[#000814] active:scale-90 transition-all flex items-center justify-center text-lg">{v}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TabItem = ({ active, onClick, icon, label }: any) => (
+  <button onClick={onClick} className="relative flex flex-col items-center justify-center w-24 h-full transition-all duration-300 group">
+    <div className={`relative z-10 transition-all duration-300 ${active ? 'text-white scale-125 -translate-y-1' : 'text-slate-600 group-hover:text-slate-400'}`}>{icon}</div>
+    <span className={`relative z-10 text-[9px] font-black uppercase tracking-[0.15em] mt-2 italic transition-colors ${active ? 'text-white' : 'text-slate-600'}`}>{label}</span>
+    {active && <div className="absolute bottom-0 w-10 h-1 bg-blue-500 rounded-t-full shadow-[0_0_20px_#3b82f6]" />}
+  </button>
+);
 
 export default App;
