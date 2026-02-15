@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { Product, VoiceName, AppSettings } from '../types';
-import { Mic, MicOff, Settings, Volume2, AlertCircle, Info, Sparkles } from 'lucide-react';
+import { Mic, MicOff, Settings, Volume2, AlertCircle, Info, Sparkles, MessageCircle } from 'lucide-react';
 
 interface Props {
   products: Product[];
@@ -53,13 +53,21 @@ const VoiceAssistant: React.FC<Props> = ({ products, settings }) => {
 
   const startSession = async () => {
     if (isActive) return;
+    
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      setError("Falta la API_KEY de Gemini en Netlify.");
+      return;
+    }
+
     setIsConnecting(true);
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const ai = new GoogleGenAI({ apiKey });
+      const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+      const inputCtx = new AudioContextClass({ sampleRate: 16000 });
+      const outputCtx = new AudioContextClass({ sampleRate: 24000 });
       audioContextRef.current = { input: inputCtx, output: outputCtx };
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -69,20 +77,21 @@ const VoiceAssistant: React.FC<Props> = ({ products, settings }) => {
       ).join('\n');
 
       const systemInstruction = `
-        Eres Vozify, el asistente de voz de ${settings.businessName}.
-        Tu misión es simular notas de voz de WhatsApp para responder a clientes con eficiencia.
-        TONO: ${settings.preferredTone.toUpperCase()}.
+        Eres Vozify, el simulador de notas de voz de WhatsApp de ${settings.businessName}.
+        Tu objetivo es responder como si estuvieras grabando un audio rápido a un cliente interesado.
         
-        REGLAS DE ORO QUE DEBES RECORDAR AL CLIENTE:
-        1. TODO TRABAJO REQUIERE DEL 50% MINIMO DEL PAGO PARA PODER SER PROCESADO.
-        2. DESPUES QUE EL DISEÑO ESTE APROBADO POR EL CLIENTE, NO SE REALIZAN CAMBIOS.
-        3. REVISE SU PEDIDO ANTES DE RETIRAR.
-        4. NO SE HACEN DEVOLUCIONES DE DINERO, SIN EXCEPCION.
+        TONO DE MARCA: ${settings.preferredTone.toUpperCase()}.
+        
+        INSTRUCCIONES DE RESPUESTA:
+        1. Sé breve. Las notas de voz efectivas en WhatsApp no duran más de 40 segundos.
+        2. Menciona precios específicos del catálogo si te preguntan.
+        3. SIEMPRE recuerda la regla del abono: "Para empezar necesitamos el 50% de abono".
+        4. Sé amable pero firme con las políticas de "no devoluciones".
 
-        Catálogo:
+        CATÁLOGO ACTUAL:
         ${catalogInfo}
         
-        Sé breve, natural y eficiente. Si das un presupuesto, recuerda siempre amablemente la regla del 50% de abono.
+        Dilo con naturalidad, evita sonar como un robot de central telefónica. Eres un humano ayudando a otro por WhatsApp.
       `;
 
       let currentInput = '';
@@ -130,7 +139,11 @@ const VoiceAssistant: React.FC<Props> = ({ products, settings }) => {
               nextStartTimeRef.current = 0;
             }
           },
-          onerror: (e) => { setError("Error de conexión AI."); stopSession(); },
+          onerror: (e) => { 
+            console.error("AI Session Error:", e);
+            setError("Error de conexión AI."); 
+            stopSession(); 
+          },
           onclose: () => stopSession()
         },
         config: {
@@ -143,6 +156,7 @@ const VoiceAssistant: React.FC<Props> = ({ products, settings }) => {
       });
       sessionRef.current = await sessionPromise;
     } catch (err: any) {
+      console.error("Session Start Error:", err);
       setError(err.message || "Error al iniciar.");
       setIsConnecting(false);
     }
@@ -150,8 +164,8 @@ const VoiceAssistant: React.FC<Props> = ({ products, settings }) => {
 
   const stopSession = () => {
     if (audioContextRef.current) {
-      audioContextRef.current.input.close();
-      audioContextRef.current.output.close();
+      audioContextRef.current.input.close().catch(() => {});
+      audioContextRef.current.output.close().catch(() => {});
       audioContextRef.current = null;
     }
     setIsActive(false);
@@ -164,24 +178,28 @@ const VoiceAssistant: React.FC<Props> = ({ products, settings }) => {
   return (
     <div className="flex flex-col items-center gap-8 max-w-2xl mx-auto py-10">
       <div className="text-center space-y-3">
-        <h2 className="text-4xl font-black text-[#000814] uppercase italic tracking-tighter">Vozify Assistant</h2>
+        <h2 className="text-4xl font-black text-[#000814] uppercase italic tracking-tighter flex items-center justify-center gap-3">
+          <MessageCircle size={32} className="text-emerald-500" /> Vozify AI
+        </h2>
         <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center justify-center gap-2">
-          <Sparkles size={14} className="text-blue-500" /> Tono de voz configurado: <span className="text-[#004ea1]">{settings.preferredTone}</span>
+          <Sparkles size={14} className="text-blue-500" /> SIMULADOR DE NOTAS DE VOZ (TONO: <span className="text-[#004ea1]">{settings.preferredTone}</span>)
         </p>
       </div>
 
       <div className="relative w-72 h-72 flex items-center justify-center">
-        {isActive && <div className="absolute inset-0 bg-blue-400 rounded-full animate-ping opacity-10"></div>}
+        {isActive && (
+          <div className="absolute inset-0 bg-emerald-400 rounded-full animate-ping opacity-20"></div>
+        )}
         <button
           onClick={toggleSession}
           disabled={isConnecting}
-          className={`relative z-10 w-56 h-56 rounded-[4rem] flex flex-col items-center justify-center gap-4 transition-all shadow-2xl border-8 ${
-            isActive ? 'bg-[#000814] border-blue-500 text-white' : 'bg-white border-slate-50 text-[#000814] hover:border-blue-100'
+          className={`relative z-10 w-56 h-56 rounded-[5rem] flex flex-col items-center justify-center gap-4 transition-all shadow-2xl border-8 ${
+            isActive ? 'bg-[#000814] border-emerald-500 text-white' : 'bg-white border-slate-50 text-[#000814] hover:border-emerald-100'
           } ${isConnecting ? 'opacity-50' : ''}`}
         >
-          {isActive ? <MicOff size={60} className="text-blue-400" /> : <Mic size={60} className="text-slate-200" />}
+          {isActive ? <MicOff size={60} className="text-emerald-400" /> : <Mic size={60} className="text-slate-200" />}
           <span className="font-black text-xs uppercase tracking-[0.2em] italic">
-            {isConnecting ? 'Enlazando...' : isActive ? 'Finalizar' : 'Hablar'}
+            {isConnecting ? 'CONECTANDO...' : isActive ? 'PARAR GRABACIÓN' : 'GRABAR AUDIO'}
           </span>
         </button>
       </div>
@@ -192,7 +210,12 @@ const VoiceAssistant: React.FC<Props> = ({ products, settings }) => {
         </div>
       )}
 
-      <div className="w-full space-y-4">
+      <div className="w-full space-y-6">
+        {transcriptions.length > 0 && (
+          <div className="text-center mb-4">
+            <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest italic">Historial de Conversación</span>
+          </div>
+        )}
         {transcriptions.map((t, i) => (
           <div key={i} className="space-y-3 animate-in fade-in slide-in-from-bottom-2">
             <div className="flex justify-end italic">
@@ -200,12 +223,21 @@ const VoiceAssistant: React.FC<Props> = ({ products, settings }) => {
             </div>
             <div className="flex justify-start">
               <div className="bg-white border-2 border-slate-50 px-5 py-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-3">
-                <Volume2 size={16} className="text-blue-500" />
-                <p className="text-xs font-black text-slate-800 uppercase italic">"{t.ai}"</p>
+                <Volume2 size={16} className="text-emerald-500" />
+                <p className="text-xs font-black text-slate-800 uppercase italic leading-relaxed">"{t.ai}"</p>
               </div>
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="bg-emerald-50 border-2 border-emerald-100 p-6 rounded-[2rem] space-y-2">
+        <h5 className="text-[10px] font-black text-emerald-700 uppercase italic flex items-center gap-2">
+          <Info size={14} /> Modo de Uso Operativo
+        </h5>
+        <p className="text-[9px] text-emerald-600 font-bold leading-relaxed uppercase">
+          Presiona grabar y dile a la IA: "¿Cuánto cuestan 20 franelas?" o "Dile al cliente que no aceptamos devoluciones". El asistente generará la respuesta perfecta para que el agente la replique en WhatsApp.
+        </p>
       </div>
     </div>
   );
